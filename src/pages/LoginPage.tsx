@@ -20,7 +20,7 @@ const LoginPage = () => {
     setLoading(true);
     setTimeout(() => {
       toast({ title: "Login Successful!", description: "Welcome to SecureLand." });
-      navigate(module === "marketplace" ? "/marketplace" : "/dashboard");
+      navigate(module === "marketplace" ? "/marketplace/dashboard" : "/protection/dashboard");
       setLoading(false);
     }, 800);
   };

@@ -28,7 +28,7 @@ const RegisterPage = () => {
         setLoading(true);
         setTimeout(() => {
             toast({ title: "Registration Successful!", description: "Welcome to SecureLand. Let's register your land." });
-            navigate("/register-land");
+            navigate("/protection/register-land");
             setLoading(false);
         }, 800);
     };
