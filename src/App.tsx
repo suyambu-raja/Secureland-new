@@ -35,6 +35,7 @@ import MarketplacePage from "./pages/MarketplacePage";
 import PropertyDetailsPage from "./pages/PropertyDetailsPage";
 import InvestmentAnalyticsPage from "./pages/InvestmentAnalyticsPage";
 import AreaSafetyPage from "./pages/AreaSafetyPage";
+import DisasterSimulationPage from "./pages/DisasterSimulationPage";
 
 import NotFound from "./pages/NotFound";
 
@@ -88,6 +89,7 @@ const App = () => {
               <Route path="intelligence" element={<InvestmentAnalyticsPage />} />
               <Route path="area-safety" element={<AreaSafetyPage />} />
               <Route path="investments" element={<InvestmentAnalyticsPage />} />
+              <Route path="disaster-simulation/:id" element={<DisasterSimulationPage />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />

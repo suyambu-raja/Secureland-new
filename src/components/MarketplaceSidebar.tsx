@@ -1,5 +1,5 @@
 import {
-    Map, Store, TrendingUp, ShieldCheck, BarChart3, ChevronLeft, ChevronRight, LogOut, ShoppingBag
+    Map, Store, TrendingUp, ShieldCheck, BarChart3, ChevronLeft, ChevronRight, LogOut, ShoppingBag, CloudRain
 } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useState } from "react";
@@ -12,6 +12,7 @@ const navItems = [
     { title: "Property Intelligence", path: "/marketplace/intelligence", icon: TrendingUp },
     { title: "Area Safety Scores", path: "/marketplace/area-safety", icon: ShieldCheck },
     { title: "Investment Analytics", path: "/marketplace/investments", icon: BarChart3 },
+    { title: "Disaster Simulation", path: "/marketplace/disaster-simulation/CHN-102", icon: CloudRain },
 ];
 
 const MarketplaceSidebar = () => {
