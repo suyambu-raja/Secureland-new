@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Shield, FileText, Download, Calendar } from "lucide-react";
+import { FileText, Download, Calendar } from "lucide-react";
 
 const reports = [
   { title: "Land Safety Report", desc: "Comprehensive safety analysis for all registered lands", date: "Mar 1, 2026", type: "Safety" },
@@ -12,9 +12,14 @@ const reports = [
 const ReportsPage = () => {
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-4xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-foreground">Reports</h1>
-        <p className="text-sm text-muted-foreground mt-1">Download and view generated reports</p>
+      <div className="hero-gradient rounded-2xl p-8 text-primary-foreground relative overflow-hidden">
+        <div className="absolute inset-0 opacity-20" style={{
+          backgroundImage: `radial-gradient(circle at 80% 50%, hsla(190,100%,50%,0.3) 0%, transparent 50%)`
+        }} />
+        <div className="relative z-10">
+          <h1 className="text-2xl font-bold mb-1">Reports</h1>
+          <p className="text-primary-foreground/60 text-sm">Download and view generated reports</p>
+        </div>
       </div>
 
       <div className="space-y-3">
@@ -24,9 +29,9 @@ const ReportsPage = () => {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: i * 0.08 }}
-            className="glass rounded-xl p-5 flex items-center gap-4"
+            className="glass-card rounded-2xl p-5 flex items-center gap-4"
           >
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
               <FileText className="w-5 h-5 text-primary" />
             </div>
             <div className="flex-1 min-w-0">
@@ -37,8 +42,8 @@ const ReportsPage = () => {
                 <span className="text-xs text-muted-foreground">{r.date}</span>
               </div>
             </div>
-            <span className="text-xs bg-secondary text-muted-foreground px-2 py-1 rounded-full hidden sm:block">{r.type}</span>
-            <button className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors shrink-0">
+            <span className="text-xs bg-secondary text-muted-foreground px-2.5 py-1 rounded-full font-medium hidden sm:block">{r.type}</span>
+            <button className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center text-primary hover:bg-primary/20 transition-colors shrink-0">
               <Download className="w-4 h-4" />
             </button>
           </motion.div>

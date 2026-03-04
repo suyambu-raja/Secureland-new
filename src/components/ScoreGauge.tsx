@@ -10,10 +10,10 @@ interface ScoreGaugeProps {
 }
 
 const colorMap = {
-  primary: { stroke: "hsl(217, 91%, 60%)", bg: "hsl(217, 91%, 60%, 0.1)" },
-  accent: { stroke: "hsl(160, 84%, 39%)", bg: "hsl(160, 84%, 39%, 0.1)" },
+  primary: { stroke: "hsl(209, 82%, 30%)", bg: "hsl(209, 82%, 30%, 0.1)" },
+  accent: { stroke: "hsl(145, 65%, 32%)", bg: "hsl(145, 65%, 32%, 0.1)" },
   warning: { stroke: "hsl(38, 92%, 50%)", bg: "hsl(38, 92%, 50%, 0.1)" },
-  destructive: { stroke: "hsl(0, 84%, 60%)", bg: "hsl(0, 84%, 60%, 0.1)" },
+  destructive: { stroke: "hsl(0, 72%, 51%)", bg: "hsl(0, 72%, 51%, 0.1)" },
 };
 
 const sizeMap = {
@@ -34,22 +34,10 @@ const ScoreGauge = ({ score, label, maxScore = 100, size = "md", variant = "prim
     <div className="flex flex-col items-center gap-2">
       <div className="relative" style={{ width: sz, height: sz }}>
         <svg width={sz} height={sz} className="-rotate-90">
-          <circle
-            cx={sz / 2}
-            cy={sz / 2}
-            r={radius}
-            stroke={bg}
-            strokeWidth={stroke}
-            fill="none"
-          />
+          <circle cx={sz / 2} cy={sz / 2} r={radius} stroke={bg} strokeWidth={stroke} fill="none" />
           <motion.circle
-            cx={sz / 2}
-            cy={sz / 2}
-            r={radius}
-            stroke={strokeColor}
-            strokeWidth={stroke}
-            fill="none"
-            strokeLinecap="round"
+            cx={sz / 2} cy={sz / 2} r={radius}
+            stroke={strokeColor} strokeWidth={stroke} fill="none" strokeLinecap="round"
             strokeDasharray={circumference}
             initial={{ strokeDashoffset: circumference }}
             animate={{ strokeDashoffset: offset }}

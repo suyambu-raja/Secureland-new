@@ -24,10 +24,10 @@ const AlertCard = ({ title, description, timestamp, severity }: AlertCardProps) 
     <motion.div
       initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
-      className={cn("glass rounded-lg p-4 border", config.border)}
+      className={cn("glass-card rounded-xl p-4 border", config.border)}
     >
       <div className="flex items-start gap-3">
-        <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", config.bg)}>
+        <div className={cn("w-9 h-9 rounded-lg flex items-center justify-center shrink-0", config.bg)}>
           <Icon className={cn("w-4 h-4", config.color)} />
         </div>
         <div className="flex-1 min-w-0">

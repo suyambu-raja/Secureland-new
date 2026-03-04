@@ -13,38 +13,30 @@ interface FeatureCardProps {
   onClick?: () => void;
 }
 
-const variantStyles = {
-  primary: "glow-primary border-primary/20",
-  accent: "glow-accent border-accent/20",
-  warning: "glow-warning border-warning/20",
-  default: "",
-};
-
 const iconBgStyles = {
-  primary: "gradient-primary",
-  accent: "gradient-accent",
-  warning: "gradient-warm",
+  primary: "hero-gradient-subtle",
+  accent: "bg-accent",
+  warning: "bg-warning",
   default: "bg-secondary",
 };
 
 const FeatureCard = ({ title, description, icon: Icon, value, trend, variant = "default", className, onClick }: FeatureCardProps) => {
   return (
     <motion.div
-      whileHover={{ y: -4, scale: 1.02 }}
+      whileHover={{ y: -3 }}
       transition={{ duration: 0.2 }}
       onClick={onClick}
       className={cn(
-        "glass rounded-xl p-5 cursor-pointer transition-all",
-        variantStyles[variant],
+        "glass-card-hover rounded-2xl p-5 cursor-pointer",
         className
       )}
     >
       <div className="flex items-start justify-between mb-3">
-        <div className={cn("w-10 h-10 rounded-lg flex items-center justify-center", iconBgStyles[variant])}>
+        <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", iconBgStyles[variant])}>
           <Icon className="w-5 h-5 text-primary-foreground" />
         </div>
         {trend && (
-          <span className="text-xs font-medium text-accent bg-accent/10 px-2 py-1 rounded-full">
+          <span className="text-xs font-semibold text-accent bg-accent/10 px-2.5 py-1 rounded-full">
             {trend}
           </span>
         )}

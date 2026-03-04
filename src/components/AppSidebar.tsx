@@ -29,25 +29,25 @@ const AppSidebar = () => {
     <motion.aside
       animate={{ width: collapsed ? 72 : 260 }}
       transition={{ duration: 0.3, ease: "easeInOut" }}
-      className="h-[calc(100vh-4rem)] sticky top-16 bg-sidebar border-r border-sidebar-border flex flex-col overflow-hidden z-40"
+      className="h-[calc(100vh-4rem)] sticky top-16 bg-card border-r border-border flex flex-col overflow-hidden z-40"
     >
       <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        {navItems.map((item, i) => (
+        {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             className={({ isActive }) =>
               cn(
-                "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 group",
+                "flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 group",
                 isActive
-                  ? "sidebar-active text-primary"
-                  : "text-sidebar-foreground hover:text-foreground hover:bg-sidebar-accent"
+                  ? "sidebar-active"
+                  : "text-sidebar-foreground hover:text-foreground hover:bg-secondary"
               )
             }
           >
             {({ isActive }) => (
               <>
-                <item.icon className={cn("w-5 h-5 shrink-0", isActive && "text-primary")} />
+                <item.icon className={cn("w-5 h-5 shrink-0", isActive ? "text-primary" : "text-muted-foreground")} />
                 <AnimatePresence>
                   {!collapsed && (
                     <motion.span
@@ -66,10 +66,10 @@ const AppSidebar = () => {
         ))}
       </nav>
 
-      <div className="p-3 border-t border-sidebar-border">
+      <div className="p-3 border-t border-border">
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className="w-full flex items-center justify-center py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-sidebar-accent transition-colors"
+          className="w-full flex items-center justify-center py-2 rounded-lg text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
         >
           {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
         </button>
