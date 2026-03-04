@@ -1,14 +1,132 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { Camera, FileText, Upload, MapPin, User, Phone, Ruler, ArrowRight, Scan, CheckCircle, Plus, Globe, Image } from "lucide-react";
+
+const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyADeLSm5n2zxbGooVoS6zggXITfSjbBsfo";
+
+// Isolated Google Maps Boundary component
+const BoundaryMap = ({ onPointAdd, points, onClear }: {
+  onPointAdd: (lat: number, lng: number) => void;
+  points: { lat: number; lng: number }[];
+  onClear: () => void;
+}) => {
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const markersRef = useRef<any[]>([]);
+  const polygonRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!mapRef.current || mapInstanceRef.current) return;
+
+    const initMap = () => {
+      const google = (window as any).google;
+      if (!google?.maps) {
+        setTimeout(initMap, 300);
+        return;
+      }
+
+      const map = new google.maps.Map(mapRef.current!, {
+        center: { lat: 13.0827, lng: 80.2707 }, // Chennai default
+        zoom: 15,
+        mapTypeId: "satellite",
+        disableDefaultUI: false,
+        zoomControl: true,
+        mapTypeControl: true,
+        streetViewControl: false,
+        fullscreenControl: true,
+      });
+
+      map.addListener("click", (e: any) => {
+        onPointAdd(e.latLng.lat(), e.latLng.lng());
+      });
+
+      mapInstanceRef.current = map;
+    };
+
+    // Load Google Maps
+    if ((window as any).google?.maps) {
+      initMap();
+    } else if (!document.getElementById("google-maps-script")) {
+      const script = document.createElement("script");
+      script.id = "google-maps-script";
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&loading=async`;
+      script.async = true;
+      script.onload = () => setTimeout(initMap, 200);
+      document.head.appendChild(script);
+    } else {
+      const poll = setInterval(() => {
+        if ((window as any).google?.maps) {
+          clearInterval(poll);
+          initMap();
+        }
+      }, 200);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Update markers and polygon when points change
+  useEffect(() => {
+    const google = (window as any).google;
+    if (!google?.maps || !mapInstanceRef.current) return;
+
+    // Clear old markers
+    markersRef.current.forEach(m => m.setMap(null));
+    markersRef.current = [];
+
+    // Clear old polygon
+    if (polygonRef.current) {
+      polygonRef.current.setMap(null);
+      polygonRef.current = null;
+    }
+
+    // Add new markers
+    points.forEach((p, i) => {
+      const marker = new google.maps.Marker({
+        position: { lat: p.lat, lng: p.lng },
+        map: mapInstanceRef.current,
+        label: { text: `${i + 1}`, color: "#fff", fontWeight: "bold", fontSize: "12px" },
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          scale: 10,
+          fillColor: "#2563EB",
+          fillOpacity: 1,
+          strokeColor: "#fff",
+          strokeWeight: 2,
+        },
+      });
+      markersRef.current.push(marker);
+    });
+
+    // Add polygon if 3+ points
+    if (points.length >= 3) {
+      polygonRef.current = new google.maps.Polygon({
+        paths: points.map(p => ({ lat: p.lat, lng: p.lng })),
+        strokeColor: "#00E5FF",
+        strokeOpacity: 0.9,
+        strokeWeight: 2,
+        fillColor: "#2563EB",
+        fillOpacity: 0.15,
+        map: mapInstanceRef.current,
+      });
+    }
+
+    // Auto-fit bounds
+    if (points.length > 0) {
+      const bounds = new google.maps.LatLngBounds();
+      points.forEach(p => bounds.extend({ lat: p.lat, lng: p.lng }));
+      mapInstanceRef.current.fitBounds(bounds, 80);
+    }
+  }, [points]);
+
+  return <div ref={mapRef} className="w-full h-full" />;
+};
 
 const RegisterLandPage = () => {
   const [stage, setStage] = useState<"landing" | "select" | "camera" | "manual">("landing");
   const [scanning, setScanning] = useState(false);
   const [scanned, setScanned] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
-  const [points, setPoints] = useState<{ x: number; y: number }[]>([]);
+  const [points, setPoints] = useState<{ lat: number; lng: number }[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
@@ -18,7 +136,6 @@ const RegisterLandPage = () => {
       const reader = new FileReader();
       reader.onload = (ev) => {
         setCapturedImage(ev.target?.result as string);
-        // Start AI processing simulation
         setScanning(true);
         setTimeout(() => {
           setScanning(false);
@@ -29,12 +146,9 @@ const RegisterLandPage = () => {
     }
   };
 
-  const handleMapClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    setPoints([...points, { x, y }]);
-  };
+  const handleAddPoint = useCallback((lat: number, lng: number) => {
+    setPoints(prev => [...prev, { lat, lng }]);
+  }, []);
 
   const handleGenerateTwin = () => {
     navigate("/digital-twin");
@@ -269,7 +383,7 @@ const RegisterLandPage = () => {
                   <label className="text-xs font-semibold text-foreground mb-1.5 block">Coordinates (from Map)</label>
                   <div className="h-11 px-4 rounded-xl bg-secondary border border-border flex items-center text-sm text-muted-foreground font-mono">
                     {points.length > 0
-                      ? `${points.length} point(s) marked`
+                      ? `${points.length} point(s) marked — ${points.map(p => `${p.lat.toFixed(4)}°, ${p.lng.toFixed(4)}°`).join(" | ")}`
                       : "Click on the map to mark boundaries →"
                     }
                   </div>
@@ -297,40 +411,15 @@ const RegisterLandPage = () => {
                   Clear Map
                 </button>
               </div>
-              <div
-                onClick={handleMapClick}
-                className="relative h-[450px] cursor-crosshair overflow-hidden"
-                style={{
-                  background: `linear-gradient(135deg, hsl(145 30% 85%), hsl(200 30% 80%), hsl(145 30% 75%))`,
-                }}
-              >
-                {/* Grid overlay */}
-                <div className="absolute inset-0 opacity-20" style={{
-                  backgroundImage: `repeating-linear-gradient(0deg, transparent, transparent 40px, hsl(209 82% 30% / 0.15) 40px, hsl(209 82% 30% / 0.15) 41px),
-                    repeating-linear-gradient(90deg, transparent, transparent 40px, hsl(209 82% 30% / 0.15) 40px, hsl(209 82% 30% / 0.15) 41px)`
-                }} />
-
-                {/* SVG Drawing Layer */}
-                <svg className="absolute inset-0 w-full h-full">
-                  {points.length > 1 && (
-                    <polygon
-                      points={points.map(p => `${p.x},${p.y}`).join(" ")}
-                      fill="hsla(209, 82%, 30%, 0.2)"
-                      stroke="hsl(190, 100%, 50%)"
-                      strokeWidth="2"
-                    />
-                  )}
-                  {points.length > 0 && points.map((p, i) => {
-                    if (i === 0) return null;
-                    return <line key={i} x1={points[i - 1].x} y1={points[i - 1].y} x2={p.x} y2={p.y} stroke="hsl(190, 100%, 50%)" strokeWidth="2" />;
-                  })}
-                  {points.map((p, i) => (
-                    <circle key={i} cx={p.x} cy={p.y} r="6" fill="hsl(209, 82%, 30%)" stroke="white" strokeWidth="2" />
-                  ))}
-                </svg>
+              <div className="relative h-[450px] overflow-hidden">
+                <BoundaryMap
+                  onPointAdd={handleAddPoint}
+                  points={points}
+                  onClear={() => setPoints([])}
+                />
 
                 {points.length === 0 && (
-                  <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
                     <div className="text-center bg-card/80 backdrop-blur-sm rounded-xl px-6 py-4 border border-border">
                       <MapPin className="w-8 h-8 text-primary mx-auto mb-2" />
                       <p className="text-sm text-foreground font-medium">Click on the map to trace your land boundary</p>
