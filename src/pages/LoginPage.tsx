@@ -1,33 +1,75 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Phone, ArrowRight, Shield, ChevronLeft, UserPlus } from "lucide-react";
+import { Phone, ArrowRight, Shield, ChevronLeft, UserPlus, Loader2 } from "lucide-react";
+import { setupRecaptcha, sendOtp, verifyOtp } from "@/lib/firebase";
+import { ConfirmationResult } from "firebase/auth";
+import { useToast } from "@/hooks/use-toast";
 
 const LoginPage = () => {
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"phone" | "otp">("phone");
+  const [loading, setLoading] = useState(false);
+  const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+  const recaptchaRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const module = searchParams.get("module") || "protection";
+  const { toast } = useToast();
 
-  const handleSendOtp = () => {
-    if (phone.length >= 10) setStep("otp");
+  const handleSendOtp = async () => {
+    if (phone.length < 10) {
+      toast({ title: "Invalid Number", description: "Please enter a valid 10-digit mobile number.", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      const recaptchaVerifier = setupRecaptcha("recaptcha-container");
+      const result = await sendOtp(phone, recaptchaVerifier);
+      setConfirmationResult(result);
+      setStep("otp");
+      toast({ title: "OTP Sent!", description: `A 6-digit code has been sent to +91 ${phone}` });
+    } catch (error: any) {
+      console.error("OTP Error:", error);
+      toast({
+        title: "Failed to send OTP",
+        description: error?.message || "Please check the number and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleVerify = () => {
-    if (otp.length === 6) {
-      // Route based on selected module
+  const handleVerify = async () => {
+    if (otp.length !== 6 || !confirmationResult) return;
+    setLoading(true);
+    try {
+      await verifyOtp(confirmationResult, otp);
+      toast({ title: "Login Successful!", description: "Welcome to SecureLand." });
       if (module === "marketplace") {
         navigate("/marketplace");
       } else {
         navigate("/dashboard");
       }
+    } catch (error: any) {
+      console.error("Verify Error:", error);
+      toast({
+        title: "Invalid OTP",
+        description: "The code you entered is incorrect. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen flex">
+      {/* reCAPTCHA container (invisible) */}
+      <div id="recaptcha-container" ref={recaptchaRef} />
+
       {/* Left Panel - Hero */}
       <div className="hidden lg:flex lg:w-1/2 hero-gradient relative items-center justify-center p-12">
         <div className="absolute inset-0 opacity-20" style={{
@@ -108,7 +150,7 @@ const LoginPage = () => {
                         <input
                           type="tel"
                           value={phone}
-                          onChange={(e) => setPhone(e.target.value)}
+                          onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
                           placeholder="9876543210"
                           className="w-full h-12 pl-10 pr-4 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
                         />
@@ -118,9 +160,10 @@ const LoginPage = () => {
 
                   <button
                     onClick={handleSendOtp}
-                    className="w-full h-12 rounded-xl hero-gradient-subtle text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-primary/20"
+                    disabled={loading || phone.length < 10}
+                    className="w-full h-12 rounded-xl hero-gradient-subtle text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Send OTP <ArrowRight className="w-4 h-4" />
+                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Send OTP <ArrowRight className="w-4 h-4" /></>}
                   </button>
 
                   {/* New Register Button */}
@@ -168,6 +211,11 @@ const LoginPage = () => {
                           }
                         }
                       }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Backspace" && !otp[i] && e.currentTarget.previousElementSibling) {
+                          (e.currentTarget.previousElementSibling as HTMLInputElement).focus();
+                        }
+                      }}
                       className="w-12 h-14 rounded-xl bg-secondary border border-border text-center text-xl font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
                     />
                   ))}
@@ -175,13 +223,14 @@ const LoginPage = () => {
 
                 <button
                   onClick={handleVerify}
-                  className="w-full h-12 rounded-xl hero-gradient-subtle text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-primary/20"
+                  disabled={loading || otp.length !== 6}
+                  className="w-full h-12 rounded-xl hero-gradient-subtle text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Verify & Continue <ArrowRight className="w-4 h-4" />
+                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Verify & Continue <ArrowRight className="w-4 h-4" /></>}
                 </button>
 
                 <button
-                  onClick={() => setStep("phone")}
+                  onClick={() => { setStep("phone"); setOtp(""); }}
                   className="w-full mt-4 flex items-center justify-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
                 >
                   <ChevronLeft className="w-4 h-4" /> Change number

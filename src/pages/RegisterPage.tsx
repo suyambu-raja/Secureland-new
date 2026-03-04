@@ -1,7 +1,12 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { Phone, ArrowRight, Shield, ChevronLeft, User, Lock, Eye, EyeOff, CheckCircle } from "lucide-react";
+import { Phone, ArrowRight, Shield, ChevronLeft, User, Lock, Eye, EyeOff, CheckCircle, Loader2 } from "lucide-react";
+import { setupRecaptcha, sendOtp, verifyOtp } from "@/lib/firebase";
+import { doc, setDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import { ConfirmationResult } from "firebase/auth";
+import { useToast } from "@/hooks/use-toast";
 
 const RegisterPage = () => {
     const [name, setName] = useState("");
@@ -12,27 +17,87 @@ const RegisterPage = () => {
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirm, setShowConfirm] = useState(false);
     const [step, setStep] = useState<"form" | "otp">("form");
+    const [loading, setLoading] = useState(false);
+    const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
+    const recaptchaRef = useRef<HTMLDivElement>(null);
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const module = searchParams.get("module") || "protection";
-
-    const handleSendOtp = () => {
-        if (name && phone.length >= 10 && password.length >= 6 && password === confirmPassword) {
-            setStep("otp");
-        }
-    };
-
-    const handleRegister = () => {
-        if (otp.length === 6) {
-            // After successful registration, redirect to Register Land page
-            navigate("/register-land");
-        }
-    };
+    const { toast } = useToast();
 
     const passwordsMatch = password.length > 0 && confirmPassword.length > 0 && password === confirmPassword;
 
+    const handleSendOtp = async () => {
+        if (!name.trim()) {
+            toast({ title: "Name Required", description: "Please enter your full name.", variant: "destructive" });
+            return;
+        }
+        if (phone.length < 10) {
+            toast({ title: "Invalid Number", description: "Please enter a valid 10-digit mobile number.", variant: "destructive" });
+            return;
+        }
+        if (password.length < 6) {
+            toast({ title: "Weak Password", description: "Password must be at least 6 characters.", variant: "destructive" });
+            return;
+        }
+        if (!passwordsMatch) {
+            toast({ title: "Password Mismatch", description: "Passwords do not match.", variant: "destructive" });
+            return;
+        }
+
+        setLoading(true);
+        try {
+            const recaptchaVerifier = setupRecaptcha("recaptcha-register");
+            const result = await sendOtp(phone, recaptchaVerifier);
+            setConfirmationResult(result);
+            setStep("otp");
+            toast({ title: "OTP Sent!", description: `A 6-digit code has been sent to +91 ${phone}` });
+        } catch (error: any) {
+            console.error("OTP Error:", error);
+            toast({
+                title: "Failed to send OTP",
+                description: error?.message || "Please check the number and try again.",
+                variant: "destructive",
+            });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleRegister = async () => {
+        if (otp.length !== 6 || !confirmationResult) return;
+        setLoading(true);
+        try {
+            const userCredential = await verifyOtp(confirmationResult, otp);
+
+            // Save user profile to Firestore
+            await setDoc(doc(db, "users", userCredential.uid), {
+                name: name.trim(),
+                phone: `+91${phone}`,
+                createdAt: new Date().toISOString(),
+                module,
+            });
+
+            toast({ title: "Registration Successful!", description: "Welcome to SecureLand. Let's register your land." });
+            // After successful registration, redirect to Register Land page
+            navigate("/register-land");
+        } catch (error: any) {
+            console.error("Register Error:", error);
+            toast({
+                title: "Registration Failed",
+                description: error?.message || "Invalid OTP or registration failed.",
+                variant: "destructive",
+            });
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return (
         <div className="min-h-screen flex">
+            {/* reCAPTCHA container */}
+            <div id="recaptcha-register" ref={recaptchaRef} />
+
             {/* Left Panel - Hero */}
             <div className="hidden lg:flex lg:w-1/2 hero-gradient relative items-center justify-center p-12">
                 <div className="absolute inset-0 opacity-20" style={{
@@ -140,7 +205,7 @@ const RegisterPage = () => {
                                                 <input
                                                     type="tel"
                                                     value={phone}
-                                                    onChange={(e) => setPhone(e.target.value)}
+                                                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
                                                     placeholder="9876543210"
                                                     className="w-full h-12 pl-10 pr-4 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
                                                 />
@@ -207,10 +272,10 @@ const RegisterPage = () => {
 
                                     <button
                                         onClick={handleSendOtp}
-                                        disabled={!name || phone.length < 10 || password.length < 6 || !passwordsMatch}
+                                        disabled={loading || !name || phone.length < 10 || password.length < 6 || !passwordsMatch}
                                         className="w-full h-12 rounded-xl hero-gradient-subtle text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        Verify Mobile & Register <ArrowRight className="w-4 h-4" />
+                                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Verify Mobile & Register <ArrowRight className="w-4 h-4" /></>}
                                     </button>
 
                                     <button
@@ -251,6 +316,11 @@ const RegisterPage = () => {
                                                     }
                                                 }
                                             }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Backspace" && !otp[i] && e.currentTarget.previousElementSibling) {
+                                                    (e.currentTarget.previousElementSibling as HTMLInputElement).focus();
+                                                }
+                                            }}
                                             className="w-12 h-14 rounded-xl bg-secondary border border-border text-center text-xl font-bold text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
                                         />
                                     ))}
@@ -258,13 +328,14 @@ const RegisterPage = () => {
 
                                 <button
                                     onClick={handleRegister}
-                                    className="w-full h-12 rounded-xl hero-gradient-subtle text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-primary/20"
+                                    disabled={loading || otp.length !== 6}
+                                    className="w-full h-12 rounded-xl hero-gradient-subtle text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    Register <ArrowRight className="w-4 h-4" />
+                                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Register <ArrowRight className="w-4 h-4" /></>}
                                 </button>
 
                                 <button
-                                    onClick={() => setStep("form")}
+                                    onClick={() => { setStep("form"); setOtp(""); }}
                                     className="w-full mt-4 flex items-center justify-center gap-1 text-sm text-muted-foreground hover:text-primary transition-colors"
                                 >
                                     <ChevronLeft className="w-4 h-4" /> Go back
