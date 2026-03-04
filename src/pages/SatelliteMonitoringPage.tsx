@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { motion } from "framer-motion";
-import { Satellite, Focus, Crosshair, Map, Activity, Layers, ZoomIn, ZoomOut, Locate } from "lucide-react";
+import { Satellite, Focus, Map, Activity, Layers, ZoomIn, ZoomOut, Locate } from "lucide-react";
 import AlertCard from "@/components/AlertCard";
 
 const GOOGLE_MAPS_API_KEY = "AIzaSyADeLSm5n2zxbGooVoS6zggXITfSjbBsfo";
 
-// Monitored land plots
 const monitoredPlots = [
   {
     id: "SL-2847A",
@@ -35,7 +34,7 @@ const monitoredPlots = [
   },
 ];
 
-// Load Google Maps script dynamically
+// Load Google Maps API with async loading
 const loadGoogleMaps = (): Promise<void> => {
   return new Promise((resolve, reject) => {
     if ((window as any).google?.maps) {
@@ -49,7 +48,7 @@ const loadGoogleMaps = (): Promise<void> => {
     }
     const script = document.createElement("script");
     script.id = "google-maps-script";
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&libraries=drawing`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${GOOGLE_MAPS_API_KEY}&loading=async`;
     script.async = true;
     script.defer = true;
     script.onload = () => resolve();
@@ -58,23 +57,21 @@ const loadGoogleMaps = (): Promise<void> => {
   });
 };
 
-const SatelliteMonitoringPage = () => {
-  const mapRef = useRef<HTMLDivElement>(null);
-  const googleMapRef = useRef<any>(null);
-  const [mapLoaded, setMapLoaded] = useState(false);
-  const [mapType, setMapType] = useState<"satellite" | "hybrid" | "terrain">("satellite");
+// Isolated Google Map component that prevents React DOM conflicts
+const GoogleMapView = ({ onMapReady }: { onMapReady: (map: any) => void }) => {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
 
   useEffect(() => {
-    let mounted = true;
+    let cancelled = false;
 
-    const initMap = async () => {
+    const init = async () => {
       try {
         await loadGoogleMaps();
-        if (!mounted || !mapRef.current) return;
+        if (cancelled || !containerRef.current || mapInstanceRef.current) return;
 
         const google = (window as any).google;
-
-        const map = new google.maps.Map(mapRef.current, {
+        const map = new google.maps.Map(containerRef.current, {
           center: { lat: 11.0185, lng: 76.9585 },
           zoom: 16,
           mapTypeId: "satellite",
@@ -85,14 +82,12 @@ const SatelliteMonitoringPage = () => {
           fullscreenControl: false,
           gestureHandling: "greedy",
           tilt: 45,
-          styles: [],
         });
 
-        googleMapRef.current = map;
+        mapInstanceRef.current = map;
 
-        // Add plot boundaries and markers
+        // Draw plot boundaries and markers
         monitoredPlots.forEach((plot) => {
-          // Draw boundary polygon
           const polygon = new google.maps.Polygon({
             paths: plot.boundary,
             strokeColor: plot.status === "alert" ? "#EF4444" : "#2563EB",
@@ -103,7 +98,6 @@ const SatelliteMonitoringPage = () => {
             map,
           });
 
-          // Animated circle for alert plots
           if (plot.status === "alert") {
             new google.maps.Circle({
               center: plot.center,
@@ -117,27 +111,18 @@ const SatelliteMonitoringPage = () => {
             });
           }
 
-          // Info window
           const infoWindow = new google.maps.InfoWindow({
             content: `
-              <div style="font-family: 'Inter', sans-serif; padding: 8px; min-width: 180px;">
-                <h3 style="font-size: 14px; font-weight: 700; margin-bottom: 6px; color: #1e293b;">
-                  ${plot.name}
-                </h3>
-                <div style="font-size: 12px; color: #64748b; line-height: 1.6;">
-                  <div><strong>Status:</strong> 
-                    <span style="color: ${plot.status === "alert" ? "#EF4444" : "#10B981"}; font-weight: 600;">
-                      ${plot.status === "alert" ? "⚠️ Alert" : "✅ Secured"}
-                    </span>
-                  </div>
-                  <div><strong>Last Scan:</strong> ${plot.lastScan}</div>
-                  <div><strong>Coordinates:</strong> ${plot.center.lat.toFixed(4)}, ${plot.center.lng.toFixed(4)}</div>
+              <div style="font-family:'Inter',sans-serif;padding:8px;min-width:180px">
+                <h3 style="font-size:14px;font-weight:700;margin-bottom:6px;color:#1e293b">${plot.name}</h3>
+                <div style="font-size:12px;color:#64748b;line-height:1.6">
+                  <div><b>Status:</b> <span style="color:${plot.status === "alert" ? "#EF4444" : "#10B981"};font-weight:600">${plot.status === "alert" ? "⚠️ Alert" : "✅ Secured"}</span></div>
+                  <div><b>Last Scan:</b> ${plot.lastScan}</div>
+                  <div><b>Coords:</b> ${plot.center.lat.toFixed(4)}, ${plot.center.lng.toFixed(4)}</div>
                 </div>
-              </div>
-            `,
+              </div>`,
           });
 
-          // Marker
           const marker = new google.maps.Marker({
             position: plot.center,
             map,
@@ -152,47 +137,52 @@ const SatelliteMonitoringPage = () => {
             title: plot.name,
           });
 
-          marker.addListener("click", () => {
-            infoWindow.open(map, marker);
-          });
-
-          // Click polygon to show info
+          marker.addListener("click", () => infoWindow.open(map, marker));
           polygon.addListener("click", () => {
             infoWindow.setPosition(plot.center);
             infoWindow.open(map);
           });
         });
 
-        setMapLoaded(true);
+        onMapReady(map);
       } catch (err) {
-        console.error("Error loading Google Maps:", err);
+        console.error("Google Maps init error:", err);
       }
     };
 
-    initMap();
-    return () => { mounted = false; };
+    init();
+
+    return () => {
+      cancelled = true;
+      // Do NOT destroy the map — let the DOM node removal handle it
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // This div is never re-rendered by React — Google Maps owns it
+  return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
+};
+
+const SatelliteMonitoringPage = () => {
+  const googleMapRef = useRef<any>(null);
+  const [mapType, setMapType] = useState<"satellite" | "hybrid" | "terrain">("satellite");
+  const [mapLoaded, setMapLoaded] = useState(false);
+
+  const handleMapReady = useCallback((map: any) => {
+    googleMapRef.current = map;
+    setMapLoaded(true);
   }, []);
 
-  // Map type toggle
   const changeMapType = (type: "satellite" | "hybrid" | "terrain") => {
     setMapType(type);
-    if (googleMapRef.current) {
-      googleMapRef.current.setMapTypeId(type);
-    }
+    googleMapRef.current?.setMapTypeId(type);
   };
 
   const zoomIn = () => {
-    if (googleMapRef.current) {
-      googleMapRef.current.setZoom(googleMapRef.current.getZoom() + 1);
-    }
+    if (googleMapRef.current) googleMapRef.current.setZoom(googleMapRef.current.getZoom() + 1);
   };
-
   const zoomOut = () => {
-    if (googleMapRef.current) {
-      googleMapRef.current.setZoom(googleMapRef.current.getZoom() - 1);
-    }
+    if (googleMapRef.current) googleMapRef.current.setZoom(googleMapRef.current.getZoom() - 1);
   };
-
   const resetView = () => {
     if (googleMapRef.current) {
       googleMapRef.current.setCenter({ lat: 11.0185, lng: 76.9585 });
@@ -200,11 +190,17 @@ const SatelliteMonitoringPage = () => {
       googleMapRef.current.setTilt(45);
     }
   };
+  const panToPlot = (center: { lat: number; lng: number }) => {
+    if (googleMapRef.current) {
+      googleMapRef.current.panTo(center);
+      googleMapRef.current.setZoom(18);
+    }
+  };
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="h-[calc(100vh-8rem)] flex flex-col space-y-4 max-w-[1400px] mx-auto">
       {/* Header */}
-      <motion.div className="flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground mb-1">Live Land Monitoring</h1>
           <p className="text-muted-foreground text-sm">Real-time satellite surveillance and AI encroachment detection.</p>
@@ -219,15 +215,14 @@ const SatelliteMonitoringPage = () => {
             <span className="text-xs font-semibold text-destructive">1 Active Alert</span>
           </div>
         </div>
-      </motion.div>
+      </div>
 
-      {/* Main Map Interface */}
+      {/* Main */}
       <div className="flex-1 flex flex-col lg:flex-row gap-6 min-h-0">
-        {/* Map Container */}
-        <div className="flex-1 glass-card rounded-[24px] overflow-hidden relative border border-border/50 shadow-2xl flex flex-col group">
-
-          {/* Map Type Controls */}
-          <div className="absolute top-4 left-4 z-20 flex gap-2">
+        {/* Map */}
+        <div className="flex-1 glass-card rounded-[24px] overflow-hidden relative border border-border/50 shadow-2xl">
+          {/* Map type controls */}
+          <div className="absolute top-4 left-4 z-[10] flex gap-2">
             {([
               { type: "satellite" as const, icon: Satellite, label: "Satellite" },
               { type: "hybrid" as const, icon: Map, label: "Hybrid" },
@@ -247,8 +242,8 @@ const SatelliteMonitoringPage = () => {
             ))}
           </div>
 
-          {/* Zoom / Reset Controls */}
-          <div className="absolute top-4 right-4 z-20 flex flex-col gap-2">
+          {/* Zoom controls */}
+          <div className="absolute top-4 right-4 z-[10] flex flex-col gap-2">
             <div className="bg-background/90 backdrop-blur-xl rounded-xl border border-border/50 shadow-2xl overflow-hidden">
               <button onClick={zoomIn} className="p-2.5 hover:bg-secondary transition-colors border-b border-border/30">
                 <ZoomIn className="w-4 h-4 text-foreground" />
@@ -262,8 +257,8 @@ const SatelliteMonitoringPage = () => {
             </div>
           </div>
 
-          {/* Status Panel */}
-          <div className="absolute bottom-4 left-4 z-20">
+          {/* Status panel */}
+          <div className="absolute bottom-4 left-4 z-[10]">
             <div className="bg-background/90 backdrop-blur-xl rounded-xl p-3 border border-border/50 shadow-2xl min-w-[180px]">
               <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">MONITORING STATUS</div>
               <div className="space-y-1.5">
@@ -283,20 +278,23 @@ const SatelliteMonitoringPage = () => {
             </div>
           </div>
 
-          {/* Google Maps Container */}
-          <div ref={mapRef} className="w-full h-full flex-1 min-h-[400px]">
-            {!mapLoaded && (
-              <div className="w-full h-full bg-[#0a0a0a] flex items-center justify-center">
-                <div className="text-center">
-                  <Satellite className="w-10 h-10 text-primary/50 mx-auto mb-3 animate-pulse" />
-                  <p className="text-sm text-muted-foreground">Loading satellite imagery...</p>
-                </div>
+          {/* Loading state */}
+          {!mapLoaded && (
+            <div className="absolute inset-0 z-[5] bg-[#0a0a0a] flex items-center justify-center">
+              <div className="text-center">
+                <Satellite className="w-10 h-10 text-primary/50 mx-auto mb-3 animate-pulse" />
+                <p className="text-sm text-muted-foreground">Loading satellite imagery...</p>
               </div>
-            )}
+            </div>
+          )}
+
+          {/* Google Maps — isolated from React's DOM reconciliation */}
+          <div className="w-full h-full" style={{ minHeight: 400 }}>
+            <GoogleMapView onMapReady={handleMapReady} />
           </div>
         </div>
 
-        {/* Side Panel */}
+        {/* Sidebar */}
         <div className="shrink-0 lg:w-[400px] flex flex-col gap-6 overflow-y-auto pr-2 custom-scrollbar">
           {/* Monitored Plots */}
           <div className="glass-card rounded-[24px] p-6 border border-border/50 shadow-xl">
@@ -307,12 +305,7 @@ const SatelliteMonitoringPage = () => {
               {monitoredPlots.map((plot) => (
                 <div
                   key={plot.id}
-                  onClick={() => {
-                    if (googleMapRef.current) {
-                      googleMapRef.current.panTo(plot.center);
-                      googleMapRef.current.setZoom(18);
-                    }
-                  }}
+                  onClick={() => panToPlot(plot.center)}
                   className={`p-3 rounded-xl border cursor-pointer transition-all hover:shadow-md ${plot.status === "alert"
                       ? "bg-destructive/5 border-destructive/20 hover:bg-destructive/10"
                       : "bg-primary/5 border-primary/20 hover:bg-primary/10"
@@ -340,16 +333,16 @@ const SatelliteMonitoringPage = () => {
             </h3>
             <div className="space-y-4">
               <AlertCard severity="critical" title="Encroachment Risk" description="Unauthorized structure detected near northern boundary of Plot #SL-1923B." timestamp="Live" />
-              <AlertCard severity="warning" title="Boundary Change Detected" description="Minor foliage overgrowth detected affecting clear boundary visibility." timestamp="2 hours ago" />
-              <AlertCard severity="success" title="Scan Completed" description="Routine perimeter scan finished. No anomalies found on SL-2847A." timestamp="1 day ago" />
-              <AlertCard severity="info" title="System Update" description="Satellite imagery updated to highest available resolution." timestamp="2 days ago" />
+              <AlertCard severity="warning" title="Boundary Change" description="Minor foliage overgrowth detected affecting boundary visibility." timestamp="2 hours ago" />
+              <AlertCard severity="success" title="Scan Completed" description="Routine perimeter scan done. No anomalies on SL-2847A." timestamp="1 day ago" />
+              <AlertCard severity="info" title="System Update" description="Satellite imagery updated to highest resolution." timestamp="2 days ago" />
             </div>
           </div>
 
           <div className="bg-primary/5 dark:bg-primary/10 border border-primary/20 rounded-[20px] p-6 text-center">
             <Satellite className="w-8 h-8 text-primary mx-auto mb-3 opacity-80" />
             <h4 className="font-semibold text-primary mb-1">Google Satellite Active</h4>
-            <p className="text-sm text-foreground/70">Live satellite imagery powered by Google Maps API with real-time boundary monitoring.</p>
+            <p className="text-sm text-foreground/70">Live imagery powered by Google Maps API with boundary monitoring.</p>
           </div>
         </div>
       </div>
