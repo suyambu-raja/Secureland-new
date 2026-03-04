@@ -5,8 +5,11 @@ import {
     MapPin, Droplets, Mountain, AlertTriangle, Shield, Waves,
     Cloud, Thermometer, Wind, TrendingUp, ChevronLeft, Play,
     RotateCcw, Satellite, Activity, Eye, Layers, Info, Gauge,
-    ArrowRight, Clock, Zap, CloudRain
+    ArrowRight, Clock, Zap, CloudRain, Loader2, RefreshCw, Bot
 } from "lucide-react";
+
+const WEATHER_API_KEY = import.meta.env.VITE_WEATHER_API_KEY || "";
+const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || "";
 
 // ============================================
 // MOCK PROPERTY DATA
@@ -309,7 +312,6 @@ const DisasterSimulationPage = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
 
-    // Default to CHN-102 if no matching property
     const property = mockProperties[id || ""] || mockProperties["CHN-102"];
 
     const [waterLevel, setWaterLevel] = useState(0);
@@ -318,21 +320,123 @@ const DisasterSimulationPage = () => {
     const [showAiExplanation, setShowAiExplanation] = useState(false);
     const [activeTab, setActiveTab] = useState<"satellite" | "terrain">("terrain");
 
+    // Live Weather State
+    const [liveWeather, setLiveWeather] = useState<{
+        temp: number; humidity: number; wind: number;
+        rainfall: number; condition: string; icon: string;
+    } | null>(null);
+    const [weatherLoading, setWeatherLoading] = useState(false);
+
+    // AI Explanation State
+    const [aiText, setAiText] = useState("");
+    const [aiLoading, setAiLoading] = useState(false);
+
     const scenario = weatherScenarios[selectedScenario];
-    const floodRisk = calculateFloodRisk(property.elevation, scenario.rainfall, property.distance_to_river);
+    const effectiveRainfall = selectedScenario === 0 && liveWeather ? liveWeather.rainfall : scenario.rainfall;
+    const floodRisk = calculateFloodRisk(property.elevation, effectiveRainfall, property.distance_to_river);
     const colors = riskColors[floodRisk.level];
+
+    // ===== FETCH LIVE WEATHER FROM WEATHERAPI.COM =====
+    const fetchLiveWeather = async () => {
+        if (!WEATHER_API_KEY) return;
+        setWeatherLoading(true);
+        try {
+            const res = await fetch(
+                `https://api.weatherapi.com/v1/current.json?key=${WEATHER_API_KEY}&q=${property.latitude},${property.longitude}`
+            );
+            const data = await res.json();
+            if (data?.current) {
+                setLiveWeather({
+                    temp: data.current.temp_c,
+                    humidity: data.current.humidity,
+                    wind: data.current.wind_kph,
+                    rainfall: data.current.precip_mm || 0,
+                    condition: data.current.condition?.text || "Clear",
+                    icon: data.current.condition?.icon || "",
+                });
+            }
+        } catch (err) {
+            console.error("Weather fetch error:", err);
+        } finally {
+            setWeatherLoading(false);
+        }
+    };
+
+    // Auto-fetch weather on load
+    useEffect(() => {
+        fetchLiveWeather();
+    }, [property.latitude, property.longitude]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ===== OPENAI AI EXPLANATION =====
+    const generateAiExplanation = async () => {
+        setAiLoading(true);
+        setShowAiExplanation(true);
+        setAiText("");
+
+        const prompt = `You are a land safety expert. Analyze flood risk for this property:
+
+Property: ${property.name}
+Location: ${property.location}
+Elevation: ${property.elevation}m above sea level
+Distance to ${property.nearby_water}: ${(property.distance_to_river / 1000).toFixed(1)} km
+Flood History: ${property.flood_history}
+Current Weather Scenario: ${scenario.name} (${effectiveRainfall}mm rainfall)
+Computed Risk Score: ${floodRisk.score}/100 (${floodRisk.level})
+${liveWeather ? `Live Weather: ${liveWeather.condition}, ${liveWeather.temp}°C, ${liveWeather.humidity}% humidity, ${liveWeather.wind} km/h wind` : ""}
+
+Provide a brief 4-5 line flood risk assessment with:
+1. Overall safety verdict
+2. Key risk factors
+3. Recommendation for the buyer
+Keep it concise and professional.`;
+
+        if (!OPENAI_API_KEY) {
+            // Fallback if no API key
+            setAiText(`🤖 AI Analysis for ${property.name}, ${property.location}:
+
+• Elevation: ${property.elevation}m ${property.elevation < 10 ? "(critically low — flood-prone zone)" : property.elevation < 50 ? "(moderate risk)" : "(safe elevation)"}
+• Nearest water body: ${property.nearby_water} at ${(property.distance_to_river / 1000).toFixed(1)} km
+• Under ${scenario.name} conditions (${effectiveRainfall}mm): Risk Level = ${floodRisk.level} (${floodRisk.score}/100)
+• Flood History: ${property.flood_history}
+
+${floodRisk.score >= 50 ? "⚠️ HIGH RISK: This property has significant flood vulnerability. Mandatory flood insurance and elevated foundation construction recommended." : floodRisk.score >= 30 ? "⚡ MODERATE RISK: Waterlogging possible during extreme weather. Basic drainage infrastructure recommended." : "✅ LOW RISK: Favorable elevation and distance from water bodies. Standard construction practices sufficient."}`);
+            setAiLoading(false);
+            return;
+        }
+
+        try {
+            const res = await fetch("https://api.openai.com/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${OPENAI_API_KEY}`,
+                },
+                body: JSON.stringify({
+                    model: "gpt-3.5-turbo",
+                    messages: [{ role: "user", content: prompt }],
+                    max_tokens: 300,
+                    temperature: 0.7,
+                }),
+            });
+            const data = await res.json();
+            setAiText(data.choices?.[0]?.message?.content || "Unable to generate AI analysis.");
+        } catch (err) {
+            console.error("OpenAI error:", err);
+            setAiText("Failed to generate AI explanation. Please try again.");
+        } finally {
+            setAiLoading(false);
+        }
+    };
 
     // Auto-simulate
     const runSimulation = () => {
         setSimulating(true);
         setWaterLevel(0);
         let level = 0;
-
         const maxLevel = Math.min(
             floodRisk.score,
-            scenario.rainfall > 200 ? 85 : scenario.rainfall > 100 ? 55 : 25
+            effectiveRainfall > 200 ? 85 : effectiveRainfall > 100 ? 55 : 25
         );
-
         const interval = setInterval(() => {
             level += 2;
             setWaterLevel(Math.min(level, maxLevel));
@@ -347,22 +451,6 @@ const DisasterSimulationPage = () => {
         setWaterLevel(0);
         setSimulating(false);
     };
-
-    // AI Explanation
-    const aiExplanation = `Based on the analysis of ${property.name} in ${property.location}:
-
-• Elevation: ${property.elevation}m above sea level ${property.elevation < 10 ? "(critically low)" : property.elevation < 50 ? "(moderate)" : "(safe)"}
-• Distance to ${property.nearby_water}: ${(property.distance_to_river / 1000).toFixed(1)} km
-• Under ${scenario.name} conditions (${scenario.rainfall}mm rainfall):
-  → Flood Risk Level: ${floodRisk.level}
-  → Risk Score: ${floodRisk.score}/100
-
-${floodRisk.level === "CRITICAL" || floodRisk.level === "HIGH"
-            ? "⚠️ This property has significant flood vulnerability. Consider flood insurance and elevated construction. Historical data confirms previous flooding events."
-            : floodRisk.level === "MEDIUM"
-                ? "⚡ Moderate flood risk detected. While not immediately dangerous, extreme weather events could cause waterlogging. Basic precautions recommended."
-                : "✅ This property has low flood risk due to favorable elevation and distance from water bodies. Standard construction practices are sufficient."
-        }`;
 
     return (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-[1400px] mx-auto space-y-6">
@@ -472,8 +560,8 @@ ${floodRisk.level === "CRITICAL" || floodRisk.level === "HIGH"
                                             key={s.name}
                                             onClick={() => { setSelectedScenario(i); resetSimulation(); }}
                                             className={`p-3 rounded-xl text-center transition-all ${selectedScenario === i
-                                                    ? "bg-primary/10 border-2 border-primary text-primary"
-                                                    : "bg-secondary/50 border-2 border-transparent text-muted-foreground hover:text-foreground"
+                                                ? "bg-primary/10 border-2 border-primary text-primary"
+                                                : "bg-secondary/50 border-2 border-transparent text-muted-foreground hover:text-foreground"
                                                 }`}
                                         >
                                             <s.icon className="w-5 h-5 mx-auto mb-1" />
@@ -563,17 +651,39 @@ ${floodRisk.level === "CRITICAL" || floodRisk.level === "HIGH"
                         </div>
                     </div>
 
-                    {/* Weather Panel */}
+                    {/* Weather Panel — Live + Scenario */}
                     <div className="glass-card rounded-2xl p-5">
-                        <h3 className="text-sm font-bold text-foreground mb-3 flex items-center gap-2">
-                            <Cloud className="w-4 h-4 text-blue-400" /> Weather Conditions
-                        </h3>
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                                <Cloud className="w-4 h-4 text-blue-400" /> Weather Conditions
+                            </h3>
+                            <button
+                                onClick={fetchLiveWeather}
+                                disabled={weatherLoading}
+                                className="text-xs font-semibold text-primary flex items-center gap-1 hover:text-primary/80 transition-colors"
+                            >
+                                {weatherLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                Fetch Live
+                            </button>
+                        </div>
+
+                        {/* Live weather banner */}
+                        {liveWeather && (
+                            <div className="mb-3 p-2.5 rounded-xl bg-accent/5 border border-accent/20 flex items-center gap-3">
+                                {liveWeather.icon && <img src={`https:${liveWeather.icon}`} alt="" className="w-8 h-8" />}
+                                <div>
+                                    <p className="text-xs font-bold text-foreground">{liveWeather.condition}</p>
+                                    <p className="text-[10px] text-muted-foreground">Live weather at property location</p>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="grid grid-cols-2 gap-3">
                             {[
-                                { label: "Rainfall", value: `${scenario.rainfall}mm`, icon: CloudRain, color: "text-blue-400" },
-                                { label: "Humidity", value: `${scenario.humidity}%`, icon: Droplets, color: "text-cyan-400" },
-                                { label: "Wind Speed", value: `${scenario.wind} km/h`, icon: Wind, color: "text-purple-400" },
-                                { label: "Temperature", value: `${scenario.temp}°C`, icon: Thermometer, color: "text-orange-400" },
+                                { label: "Rainfall", value: `${liveWeather && selectedScenario === 0 ? liveWeather.rainfall : scenario.rainfall}mm`, icon: CloudRain, color: "text-blue-400" },
+                                { label: "Humidity", value: `${liveWeather && selectedScenario === 0 ? liveWeather.humidity : scenario.humidity}%`, icon: Droplets, color: "text-cyan-400" },
+                                { label: "Wind Speed", value: `${liveWeather && selectedScenario === 0 ? liveWeather.wind : scenario.wind} km/h`, icon: Wind, color: "text-purple-400" },
+                                { label: "Temperature", value: `${liveWeather && selectedScenario === 0 ? liveWeather.temp : scenario.temp}°C`, icon: Thermometer, color: "text-orange-400" },
                             ].map((w) => (
                                 <div key={w.label} className="p-3 rounded-xl bg-secondary/50 border border-border/50">
                                     <w.icon className={`w-4 h-4 ${w.color} mb-1`} />
@@ -625,16 +735,22 @@ ${floodRisk.level === "CRITICAL" || floodRisk.level === "HIGH"
                         </div>
                     </div>
 
-                    {/* AI Explanation */}
+                    {/* AI Explanation — Powered by OpenAI */}
                     <div className="glass-card rounded-2xl p-5">
                         <button
-                            onClick={() => setShowAiExplanation(!showAiExplanation)}
+                            onClick={generateAiExplanation}
+                            disabled={aiLoading}
                             className="w-full flex items-center justify-between"
                         >
                             <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                                <Zap className="w-4 h-4 text-yellow-500" /> AI Risk Explanation
+                                <Bot className="w-4 h-4 text-yellow-500" /> AI Risk Explanation
+                                {OPENAI_API_KEY && <span className="text-[9px] font-normal text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">GPT</span>}
                             </h3>
-                            <ArrowRight className={`w-4 h-4 text-muted-foreground transition-transform ${showAiExplanation ? "rotate-90" : ""}`} />
+                            {aiLoading ? (
+                                <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                            ) : (
+                                <ArrowRight className={`w-4 h-4 text-muted-foreground transition-transform ${showAiExplanation ? "rotate-90" : ""}`} />
+                            )}
                         </button>
                         <AnimatePresence>
                             {showAiExplanation && (
@@ -644,9 +760,16 @@ ${floodRisk.level === "CRITICAL" || floodRisk.level === "HIGH"
                                     exit={{ height: 0, opacity: 0 }}
                                     className="overflow-hidden"
                                 >
-                                    <pre className="mt-3 text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed bg-secondary/50 rounded-xl p-4 border border-border/50">
-                                        {aiExplanation}
-                                    </pre>
+                                    {aiLoading ? (
+                                        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground p-4">
+                                            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                                            Analyzing property with AI...
+                                        </div>
+                                    ) : (
+                                        <pre className="mt-3 text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed bg-secondary/50 rounded-xl p-4 border border-border/50">
+                                            {aiText}
+                                        </pre>
+                                    )}
                                 </motion.div>
                             )}
                         </AnimatePresence>
