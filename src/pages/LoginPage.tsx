@@ -1,8 +1,8 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { Phone, ArrowRight, Shield, ChevronLeft, UserPlus, Loader2 } from "lucide-react";
-import { setupRecaptcha, sendOtp, verifyOtp } from "@/lib/firebase";
+import { DEMO_MODE, generateDemoOtp, verifyDemoOtp, setupRecaptcha, sendOtp, verifyOtp } from "@/lib/firebase";
 import { ConfirmationResult } from "firebase/auth";
 import { useToast } from "@/hooks/use-toast";
 
@@ -12,7 +12,6 @@ const LoginPage = () => {
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [loading, setLoading] = useState(false);
   const [confirmationResult, setConfirmationResult] = useState<ConfirmationResult | null>(null);
-  const recaptchaRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const module = searchParams.get("module") || "protection";
@@ -24,51 +23,65 @@ const LoginPage = () => {
       return;
     }
     setLoading(true);
-    try {
-      const recaptchaVerifier = setupRecaptcha("recaptcha-container");
-      const result = await sendOtp(phone, recaptchaVerifier);
-      setConfirmationResult(result);
-      setStep("otp");
-      toast({ title: "OTP Sent!", description: `A 6-digit code has been sent to +91 ${phone}` });
-    } catch (error: any) {
-      console.error("OTP Error:", error);
-      toast({
-        title: "Failed to send OTP",
-        description: error?.message || "Please check the number and try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setLoading(false);
+
+    if (DEMO_MODE) {
+      // Demo mode — generate OTP and show it in a toast
+      const code = generateDemoOtp();
+      setTimeout(() => {
+        toast({
+          title: `📱 OTP for +91 ${phone}`,
+          description: `Your verification code is: ${code}`,
+          duration: 15000,
+        });
+        setStep("otp");
+        setLoading(false);
+      }, 1000);
+    } else {
+      // Production mode — Firebase Phone Auth
+      try {
+        const recaptchaVerifier = setupRecaptcha("recaptcha-container");
+        const result = await sendOtp(phone, recaptchaVerifier);
+        setConfirmationResult(result);
+        setStep("otp");
+        toast({ title: "OTP Sent!", description: `A 6-digit code has been sent to +91 ${phone}` });
+      } catch (error: any) {
+        toast({ title: "Failed to send OTP", description: error?.message || "Please try again.", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
   const handleVerify = async () => {
-    if (otp.length !== 6 || !confirmationResult) return;
+    if (otp.length !== 6) return;
     setLoading(true);
-    try {
-      await verifyOtp(confirmationResult, otp);
-      toast({ title: "Login Successful!", description: "Welcome to SecureLand." });
-      if (module === "marketplace") {
-        navigate("/marketplace");
+
+    if (DEMO_MODE) {
+      // Demo mode — verify locally
+      if (verifyDemoOtp(otp)) {
+        toast({ title: "Login Successful!", description: "Welcome to SecureLand." });
+        navigate(module === "marketplace" ? "/marketplace" : "/dashboard");
       } else {
-        navigate("/dashboard");
+        toast({ title: "Invalid OTP", description: "The code you entered is incorrect.", variant: "destructive" });
       }
-    } catch (error: any) {
-      console.error("Verify Error:", error);
-      toast({
-        title: "Invalid OTP",
-        description: "The code you entered is incorrect. Please try again.",
-        variant: "destructive",
-      });
-    } finally {
       setLoading(false);
+    } else {
+      // Production mode
+      try {
+        await verifyOtp(confirmationResult!, otp);
+        toast({ title: "Login Successful!", description: "Welcome to SecureLand." });
+        navigate(module === "marketplace" ? "/marketplace" : "/dashboard");
+      } catch {
+        toast({ title: "Invalid OTP", description: "The code you entered is incorrect.", variant: "destructive" });
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
   return (
     <div className="min-h-screen flex">
-      {/* reCAPTCHA container (invisible) */}
-      <div id="recaptcha-container" ref={recaptchaRef} />
+      <div id="recaptcha-container" />
 
       {/* Left Panel - Hero */}
       <div className="hidden lg:flex lg:w-1/2 hero-gradient relative items-center justify-center p-12">
@@ -119,7 +132,6 @@ const LoginPage = () => {
           animate={{ opacity: 1, x: 0 }}
           className="w-full max-w-md"
         >
-          {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-3 mb-8">
             <div className="w-10 h-10 rounded-xl hero-gradient flex items-center justify-center">
               <Shield className="w-5 h-5 text-primary-foreground" />
@@ -129,12 +141,7 @@ const LoginPage = () => {
 
           <AnimatePresence mode="wait">
             {step === "phone" ? (
-              <motion.div
-                key="phone"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-              >
+              <motion.div key="phone" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
                 <h2 className="text-2xl font-bold text-foreground mb-1">Welcome back</h2>
                 <p className="text-sm text-muted-foreground mb-8">Enter your mobile number to continue</p>
 
@@ -142,9 +149,7 @@ const LoginPage = () => {
                   <div>
                     <label className="text-xs font-semibold text-foreground mb-1.5 block">Mobile Number</label>
                     <div className="flex gap-2">
-                      <div className="h-12 px-3 rounded-lg bg-secondary border border-border flex items-center text-sm text-muted-foreground font-medium">
-                        +91
-                      </div>
+                      <div className="h-12 px-3 rounded-lg bg-secondary border border-border flex items-center text-sm text-muted-foreground font-medium">+91</div>
                       <div className="relative flex-1">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                         <input
@@ -166,7 +171,6 @@ const LoginPage = () => {
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Send OTP <ArrowRight className="w-4 h-4" /></>}
                   </button>
 
-                  {/* New Register Button */}
                   <div className="relative flex items-center gap-4 py-2">
                     <div className="flex-1 h-px bg-border" />
                     <span className="text-xs text-muted-foreground font-medium">or</span>
@@ -182,16 +186,16 @@ const LoginPage = () => {
                 </div>
               </motion.div>
             ) : (
-              <motion.div
-                key="otp"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-              >
+              <motion.div key="otp" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}>
                 <h2 className="text-2xl font-bold text-foreground mb-1">Verify OTP</h2>
-                <p className="text-sm text-muted-foreground mb-8">
+                <p className="text-sm text-muted-foreground mb-2">
                   Enter the 6-digit code sent to +91 {phone}
                 </p>
+                {DEMO_MODE && (
+                  <p className="text-xs text-primary bg-primary/10 px-3 py-1.5 rounded-lg mb-6 font-medium">
+                    📱 Demo Mode — Check the notification toast for your OTP code
+                  </p>
+                )}
 
                 <div className="flex gap-2 mb-6 justify-center">
                   {Array.from({ length: 6 }).map((_, i) => (

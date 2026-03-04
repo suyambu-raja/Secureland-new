@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, ConfirmationResult } from "firebase/auth";
+import { getAuth, signInWithPhoneNumber, RecaptchaVerifier } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -15,32 +15,52 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// Setup invisible reCAPTCHA for phone auth
+// ============================================
+// DEMO OTP SYSTEM (Free - No Billing Needed)
+// Set to false when you upgrade to Firebase Blaze plan
+// ============================================
+export const DEMO_MODE = true;
+
+// In demo mode, we generate a random 6-digit OTP and verify locally
+// In production mode, we use Firebase Phone Auth (requires Blaze plan)
+
+let demoOtp: string = "";
+
+export const generateDemoOtp = (): string => {
+    demoOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    return demoOtp;
+};
+
+export const verifyDemoOtp = (inputOtp: string): boolean => {
+    return inputOtp === demoOtp;
+};
+
+// Firebase reCAPTCHA setup (for production mode)
+let globalRecaptchaVerifier: RecaptchaVerifier | null = null;
+
 export const setupRecaptcha = (elementId: string): RecaptchaVerifier => {
+    if (globalRecaptchaVerifier) {
+        try { globalRecaptchaVerifier.clear(); } catch (e) { /* ignore */ }
+        globalRecaptchaVerifier = null;
+    }
+    const existing = document.getElementById(elementId);
+    if (existing) existing.innerHTML = "";
+
     const verifier = new RecaptchaVerifier(auth, elementId, {
         size: "invisible",
-        callback: () => {
-            // reCAPTCHA solved
-        },
+        callback: () => { },
+        "expired-callback": () => { globalRecaptchaVerifier = null; },
     });
+    globalRecaptchaVerifier = verifier;
     return verifier;
 };
 
-// Send OTP to phone number
-export const sendOtp = async (
-    phoneNumber: string,
-    recaptchaVerifier: RecaptchaVerifier
-): Promise<ConfirmationResult> => {
+export const sendOtp = async (phoneNumber: string, recaptchaVerifier: RecaptchaVerifier) => {
     const formattedPhone = phoneNumber.startsWith("+91") ? phoneNumber : `+91${phoneNumber}`;
-    const confirmationResult = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifier);
-    return confirmationResult;
+    return await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifier);
 };
 
-// Verify OTP
-export const verifyOtp = async (
-    confirmationResult: ConfirmationResult,
-    otp: string
-) => {
+export const verifyOtp = async (confirmationResult: any, otp: string) => {
     const result = await confirmationResult.confirm(otp);
     return result.user;
 };
