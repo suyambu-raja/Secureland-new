@@ -25,8 +25,22 @@ const RegisterPage = () => {
         if (password.length < 6) { toast({ title: "Weak Password", description: "Password must be at least 6 characters.", variant: "destructive" }); return; }
         if (!passwordsMatch) { toast({ title: "Password Mismatch", description: "Passwords do not match.", variant: "destructive" }); return; }
 
+        // Check if phone already registered
+        const existingUsers = JSON.parse(localStorage.getItem("secureland_users") || "[]");
+        const alreadyExists = existingUsers.find((u: any) => u.phone === phone);
+        if (alreadyExists) {
+            toast({ title: "Already Registered", description: "This mobile number is already registered. Please login.", variant: "destructive" });
+            return;
+        }
+
         setLoading(true);
         setTimeout(() => {
+            // Save user credentials to localStorage
+            const newUser = { name, phone, password };
+            existingUsers.push(newUser);
+            localStorage.setItem("secureland_users", JSON.stringify(existingUsers));
+            localStorage.setItem("secureland_current_user", JSON.stringify({ name, phone }));
+
             toast({ title: "Registration Successful!", description: "Welcome to SecureLand. Let's register your land." });
             navigate("/protection/register-land");
             setLoading(false);

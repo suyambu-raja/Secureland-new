@@ -1,25 +1,55 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Phone, ArrowRight, Shield, UserPlus, Loader2 } from "lucide-react";
+import { Phone, ArrowRight, Shield, UserPlus, Loader2, Lock, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const LoginPage = () => {
   const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const module = searchParams.get("module") || "protection";
   const { toast } = useToast();
 
   const handleLogin = () => {
+    setError("");
+
     if (phone.length < 10) {
       toast({ title: "Invalid Number", description: "Please enter a valid 10-digit mobile number.", variant: "destructive" });
       return;
     }
+    if (!password) {
+      toast({ title: "Password Required", description: "Please enter your password.", variant: "destructive" });
+      return;
+    }
+
     setLoading(true);
     setTimeout(() => {
-      toast({ title: "Login Successful!", description: "Welcome to SecureLand." });
+      // Check credentials against stored users
+      const users = JSON.parse(localStorage.getItem("secureland_users") || "[]");
+      const matchedUser = users.find((u: any) => u.phone === phone && u.password === password);
+
+      if (!matchedUser) {
+        // Check if phone exists but password is wrong
+        const phoneExists = users.find((u: any) => u.phone === phone);
+        if (phoneExists) {
+          setError("Invalid password. Please try again.");
+          toast({ title: "Login Failed", description: "Incorrect password for this mobile number.", variant: "destructive" });
+        } else {
+          setError("This mobile number is not registered. Please register first.");
+          toast({ title: "Not Registered", description: "No account found with this mobile number. Please register.", variant: "destructive" });
+        }
+        setLoading(false);
+        return;
+      }
+
+      // Login successful
+      localStorage.setItem("secureland_current_user", JSON.stringify({ name: matchedUser.name, phone: matchedUser.phone }));
+      toast({ title: "Login Successful!", description: `Welcome back, ${matchedUser.name}!` });
       navigate(module === "marketplace" ? "/marketplace/dashboard" : "/protection/dashboard");
       setLoading(false);
     }, 800);
@@ -84,9 +114,22 @@ const LoginPage = () => {
           </div>
 
           <h2 className="text-2xl font-bold text-foreground mb-1">Welcome back</h2>
-          <p className="text-sm text-muted-foreground mb-8">Enter your mobile number to continue</p>
+          <p className="text-sm text-muted-foreground mb-8">Enter your credentials to continue</p>
+
+          {/* Error Alert */}
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-4 p-3 rounded-xl bg-destructive/10 border border-destructive/20 flex items-center gap-2"
+            >
+              <AlertCircle className="w-4 h-4 text-destructive shrink-0" />
+              <p className="text-sm text-destructive font-medium">{error}</p>
+            </motion.div>
+          )}
 
           <div className="space-y-4">
+            {/* Mobile Number */}
             <div>
               <label className="text-xs font-semibold text-foreground mb-1.5 block">Mobile Number</label>
               <div className="flex gap-2">
@@ -96,7 +139,7 @@ const LoginPage = () => {
                   <input
                     type="tel"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                    onChange={(e) => { setPhone(e.target.value.replace(/\D/g, "").slice(0, 10)); setError(""); }}
                     placeholder="9876543210"
                     className="w-full h-12 pl-10 pr-4 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
                   />
@@ -104,9 +147,29 @@ const LoginPage = () => {
               </div>
             </div>
 
+            {/* Password */}
+            <div>
+              <label className="text-xs font-semibold text-foreground mb-1.5 block">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => { setPassword(e.target.value); setError(""); }}
+                  onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                  placeholder="Enter your password"
+                  className="w-full h-12 pl-10 pr-11 rounded-lg bg-secondary border border-border text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition-all"
+                />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors">
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            {/* Login Button */}
             <button
               onClick={handleLogin}
-              disabled={loading || phone.length < 10}
+              disabled={loading || phone.length < 10 || !password}
               className="w-full h-12 rounded-xl hero-gradient-subtle text-primary-foreground font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity shadow-lg shadow-primary/20 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Login <ArrowRight className="w-4 h-4" /></>}
