@@ -16,9 +16,10 @@ const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyA
 // =============================================
 // GOOGLE MAPS BOUNDARY DRAWING COMPONENT
 // =============================================
-const BoundaryMap = ({ points, onPointsChange }: {
+const BoundaryMap = ({ points, onPointsChange, mapCenter }: {
   points: { lat: number; lng: number }[];
   onPointsChange: (pts: { lat: number; lng: number }[]) => void;
+  mapCenter?: { lat: number; lng: number; zoom?: number } | null;
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -125,6 +126,14 @@ const BoundaryMap = ({ points, onPointsChange }: {
     }
   }, [points]); // eslint-disable-line
 
+  // Pan to new center when location changes
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !mapCenter) return;
+    map.panTo({ lat: mapCenter.lat, lng: mapCenter.lng });
+    if (mapCenter.zoom) map.setZoom(mapCenter.zoom);
+  }, [mapCenter]);
+
   return <div ref={mapRef} className="w-full h-full" />;
 };
 
@@ -166,6 +175,9 @@ const RegisterLandPage = () => {
   const [location, setLocation] = useState("");
   const [points, setPoints] = useState<{ lat: number; lng: number }[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number; zoom?: number } | null>(null);
+  const [locationMatched, setLocationMatched] = useState(false);
+  const geocodeTimerRef = useRef<any>(null);
 
   // Post-registration security flow
   const [securityStep, setSecurityStep] = useState<0 | 1 | 2 | 3>(0); // 0=hidden, 1=password, 2=face, 3=success
@@ -504,14 +516,50 @@ const RegisterLandPage = () => {
                     </select>
                   </div>
                 </div>
-                {/* Location */}
+                {/* Location — with auto-geocode → map jump */}
                 <div>
                   <label className="text-xs font-semibold text-foreground mb-1.5 block">Land Location</label>
                   <div className="relative">
                     <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <input type="text" value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Village / Town / City"
-                      className="w-full h-11 pl-10 pr-4 rounded-xl bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                    <input type="text" value={location}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setLocation(val);
+                        setLocationMatched(false);
+
+                        // Debounced geocoding
+                        if (geocodeTimerRef.current) clearTimeout(geocodeTimerRef.current);
+                        if (val.trim().length < 3) return;
+
+                        geocodeTimerRef.current = setTimeout(() => {
+                          const google = (window as any).google;
+                          if (!google?.maps) return;
+
+                          const geocoder = new google.maps.Geocoder();
+                          // Append state for better results in India
+                          const query = state ? `${val}, ${state}, India` : `${val}, India`;
+                          geocoder.geocode({ address: query }, (results: any, status: string) => {
+                            if (status === "OK" && results?.[0]) {
+                              const loc = results[0].geometry.location;
+                              setMapCenter({ lat: loc.lat(), lng: loc.lng(), zoom: 17 });
+                              setLocationMatched(true);
+                            }
+                          });
+                        }, 600);
+                      }}
+                      placeholder="Village / Town / City"
+                      className={`w-full h-11 pl-10 pr-10 rounded-xl bg-secondary border text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all ${locationMatched ? "border-emerald-500 ring-2 ring-emerald-500/20" : "border-border"
+                        }`}
+                    />
+                    {locationMatched && (
+                      <CheckCircle className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-emerald-500" />
+                    )}
                   </div>
+                  {locationMatched && (
+                    <p className="text-[10px] text-emerald-500 mt-1 flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" /> Location matched — map centered
+                    </p>
+                  )}
                 </div>
                 {/* Auto-calculated Area */}
                 <div>
@@ -560,7 +608,7 @@ const RegisterLandPage = () => {
                 </div>
               </div>
               <div className="relative h-[530px] overflow-hidden">
-                <BoundaryMap points={points} onPointsChange={handlePointsChange} />
+                <BoundaryMap points={points} onPointsChange={handlePointsChange} mapCenter={mapCenter} />
 
                 {points.length === 0 && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
@@ -596,8 +644,8 @@ const RegisterLandPage = () => {
                   {[1, 2, 3].map((s) => (
                     <div key={s} className="flex items-center gap-2">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-all duration-500 ${securityStep >= s
-                          ? "bg-emerald-500 border-emerald-400 text-white shadow-lg shadow-emerald-500/30"
-                          : "bg-white/5 border-white/20 text-white/40"
+                        ? "bg-emerald-500 border-emerald-400 text-white shadow-lg shadow-emerald-500/30"
+                        : "bg-white/5 border-white/20 text-white/40"
                         }`}>
                         {securityStep > s ? <CheckCircle className="w-5 h-5" /> : s}
                       </div>
