@@ -7,30 +7,34 @@ import firebase_admin
 from firebase_admin import auth as firebase_auth, credentials
 from rest_framework import authentication, exceptions
 from django.conf import settings
+import os
 
 
-# Initialize Firebase Admin SDK (uses Application Default Credentials or project ID)
+# Initialize Firebase Admin SDK
 if not firebase_admin._apps:
-    try:
-        # Try to use service account JSON if available
-        import os
-        sa_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "firebase-service-account.json"
-        )
-        if os.path.exists(sa_path):
-            cred = credentials.Certificate(sa_path)
-            firebase_admin.initialize_app(cred)
-        else:
-            # Initialize with just the project ID (limited functionality)
+    sa_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "firebase-service-account.json"
+    )
+
+    if os.path.exists(sa_path):
+        cred = credentials.Certificate(sa_path)
+        firebase_admin.initialize_app(cred)
+        print("✅ Firebase Admin initialized with service account key.")
+    else:
+        # Initialize without credentials — allows Firestore access if
+        # GOOGLE_APPLICATION_CREDENTIALS env var is set, or running on GCP.
+        # For LOCAL DEV: download service account key from Firebase Console.
+        try:
             firebase_admin.initialize_app(options={
                 "projectId": settings.FIREBASE_PROJECT_ID,
             })
-    except Exception as e:
-        print(f"Firebase Admin SDK init warning: {e}")
-        firebase_admin.initialize_app(options={
-            "projectId": settings.FIREBASE_PROJECT_ID,
-        })
+            print(f"⚠️ Firebase Admin initialized with project ID only: {settings.FIREBASE_PROJECT_ID}")
+            print(f"   📄 For full access, download service account key from:")
+            print(f"   https://console.firebase.google.com/project/{settings.FIREBASE_PROJECT_ID}/settings/serviceaccounts/adminsdk")
+            print(f"   Save it as: backend/firebase-service-account.json")
+        except Exception as e:
+            print(f"❌ Firebase Admin SDK init error: {e}")
 
 
 class FirebaseUser:

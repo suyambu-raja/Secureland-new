@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     # Third party
     "rest_framework",
     "corsheaders",
+    "drf_yasg",
     # Local
     "api",
 ]
@@ -97,6 +98,19 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.AllowAny",
     ],
+}
+
+# Swagger
+SWAGGER_SETTINGS = {
+    "SECURITY_DEFINITIONS": {
+        "Bearer": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+            "description": "Firebase ID Token. Format: Bearer <token>",
+        }
+    },
+    "USE_SESSION_AUTH": False,
 }
 
 # Firebase
