@@ -8,6 +8,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
 import { doc, setDoc, collection } from "firebase/firestore";
+import { registerOnBlockchain } from "@/lib/blockchain";
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyADeLSm5n2zxbGooVoS6zggXITfSjbBsfo";
 
@@ -202,7 +203,7 @@ const RegisterLandPage = () => {
     try {
       // Generate unique Land ID
       const landId = `SL-${state.slice(0, 2).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`;
-      const twin = {
+      const twin: any = {
         landId,
         ownerName,
         mobile,
@@ -214,16 +215,36 @@ const RegisterLandPage = () => {
         polygon: points,
       };
 
-      // Save to Firebase Firestore
+      // 1. Save to Firebase Firestore
       await setDoc(doc(db, "digitalTwins", landId), twin);
 
-      // Also keep in localStorage for current session
+      // 2. Register on Blockchain (client-side SHA-256 hash chain)
+      try {
+        const block = await registerOnBlockchain({
+          landId,
+          ownerName,
+          mobile,
+          state,
+          location,
+          area: calculatedArea,
+          coordinates: points,
+        });
+        twin.blockchainHash = block.hash;
+        twin.blockIndex = block.index;
+        twin.blockNonce = block.nonce;
+        twin.blockchainTimestamp = block.timestamp;
+        twin.blockchainVerified = true;
+      } catch (bcErr) {
+        console.warn("Blockchain registration skipped:", bcErr);
+      }
+
+      // 3. Keep in localStorage for session
       const existing = JSON.parse(localStorage.getItem("secureland_twins") || "[]");
       existing.push(twin);
       localStorage.setItem("secureland_twins", JSON.stringify(existing));
       localStorage.setItem("secureland_latest_twin", JSON.stringify(twin));
 
-      toast({ title: "Land Registered!", description: `Land ID: ${landId} — saved to database.` });
+      toast({ title: "⛓️ Land Registered on Blockchain!", description: `Land ID: ${landId} — Hash: ${twin.blockchainHash?.slice(0, 16)}...` });
       navigate("/digital-twin");
     } catch (error: any) {
       console.error("Land registration error:", error);

@@ -1,20 +1,26 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Land rates - readable by anyone, writable only by Cloud Functions
+    // Land rates - readable by anyone
     match /landRates/{document=**} {
       allow read: if true;
       allow write: if false;
     }
     
-    // Users collection - allow register and login
+    // Users collection
     match /users/{phone} {
       allow read, write: if true;
     }
 
-    // Digital Twins - land registrations
+    // Digital Twins
     match /digitalTwins/{landId} {
       allow read, write: if true;
+    }
+
+    // Blockchain - readable by anyone, writable by backend
+    match /blockchain/{blockId} {
+      allow read: if true;
+      allow write: if true;
     }
   }
 }

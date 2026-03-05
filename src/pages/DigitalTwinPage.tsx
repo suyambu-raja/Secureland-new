@@ -3,9 +3,10 @@ import { useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
     Shield, Map, Fingerprint, CheckCircle, Hexagon, ArrowRight, Sparkles,
-    MapPin, User, Phone, Globe, Calendar, Hash, Ruler, Copy, Download, Eye
+    MapPin, User, Phone, Globe, Calendar, Hash, Ruler, Copy, Download, Eye, Box
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import Cesium3DViewer from "@/components/Cesium3DViewer";
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || "AIzaSyADeLSm5n2zxbGooVoS6zggXITfSjbBsfo";
 
@@ -93,6 +94,7 @@ const DigitalTwinPage = () => {
     const [progress, setProgress] = useState(0);
     const [phase, setPhase] = useState<"generating" | "complete">("generating");
     const [twin, setTwin] = useState<any>(null);
+    const [viewMode, setViewMode] = useState<"2D" | "3D">("2D");
 
     useEffect(() => {
         const stored = localStorage.getItem("secureland_latest_twin");
@@ -245,13 +247,31 @@ const DigitalTwinPage = () => {
                                     </div>
                                 </div>
 
-                                {/* Blockchain Hash */}
+                                {/* Blockchain Verification */}
                                 <div className="glass rounded-2xl p-5 border border-primary-foreground/10">
-                                    <p className="text-[10px] text-primary-foreground/40 font-medium mb-1">Blockchain Transaction Hash</p>
-                                    <div className="flex items-center gap-2">
-                                        <p className="text-xs font-mono text-cyan truncate flex-1">0x{Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join("")}</p>
-                                        <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
-                                    </div>
+                                    <p className="text-[10px] text-primary-foreground/40 font-medium mb-2 uppercase tracking-wider">⛓️ Blockchain Record</p>
+                                    {twin.blockchainHash ? (
+                                        <div className="space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <p className="text-xs font-mono text-cyan truncate flex-1">0x{twin.blockchainHash}</p>
+                                                <button onClick={() => copyToClipboard(twin.blockchainHash)} className="p-1 rounded hover:bg-primary-foreground/10">
+                                                    <Copy className="w-3 h-3 text-primary-foreground/50" />
+                                                </button>
+                                            </div>
+                                            <div className="flex items-center gap-4 text-[10px] font-mono text-primary-foreground/50">
+                                                <span>Block #{twin.blockIndex}</span>
+                                                <span>Nonce: {twin.blockNonce}</span>
+                                                <div className="flex items-center gap-1 ml-auto">
+                                                    <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                                                    <span className="text-emerald-400 font-bold">VERIFIED</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="flex items-center gap-2">
+                                            <p className="text-xs font-mono text-primary-foreground/40">Blockchain registration pending...</p>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* GPS Coordinates */}
@@ -272,19 +292,38 @@ const DigitalTwinPage = () => {
 
                             {/* RIGHT — Satellite Map (3 cols) */}
                             <div className="lg:col-span-3">
-                                <div className="glass rounded-2xl overflow-hidden border border-primary-foreground/10">
-                                    <div className="px-5 py-3 border-b border-primary-foreground/10 flex items-center justify-between">
+                                <div className="glass rounded-2xl overflow-hidden border border-primary-foreground/10 h-full flex flex-col">
+                                    <div className="px-5 py-3 border-b border-primary-foreground/10 flex items-center justify-between bg-primary-foreground/5 shrink-0">
                                         <div className="flex items-center gap-2">
                                             <Eye className="w-4 h-4 text-cyan" />
-                                            <span className="text-sm font-bold text-primary-foreground">Satellite View — Land Boundary</span>
+                                            <span className="text-sm font-bold text-primary-foreground">
+                                                {viewMode === "2D" ? "Satellite View — 2D Boundary" : "Digital Twin — 3D Visualizer"}
+                                            </span>
                                         </div>
-                                        <div className="flex items-center gap-1">
-                                            <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                                            <span className="text-[10px] text-emerald-400 font-semibold">VERIFIED</span>
+                                        <div className="flex bg-black/40 p-1 rounded-lg border border-white/10">
+                                            <button
+                                                onClick={() => setViewMode("2D")}
+                                                className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center gap-1.5 ${viewMode === "2D" ? "bg-cyan text-black" : "text-primary-foreground/50 hover:text-primary-foreground"}`}
+                                            >
+                                                <Map className="w-3 h-3" /> 2D MAP
+                                            </button>
+                                            <button
+                                                onClick={() => setViewMode("3D")}
+                                                className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all flex items-center gap-1.5 ${viewMode === "3D" ? "bg-cyan text-black" : "text-primary-foreground/50 hover:text-primary-foreground"}`}
+                                            >
+                                                <Box className="w-3 h-3" /> 3D TWIN
+                                            </button>
                                         </div>
                                     </div>
-                                    <div className="h-[500px]">
-                                        <TwinMapViewer polygon={twin.polygon || twin.coordinates || []} />
+                                    <div className="flex-1 min-h-[500px]">
+                                        {viewMode === "2D" ? (
+                                            <TwinMapViewer polygon={twin.polygon || twin.coordinates || []} />
+                                        ) : (
+                                            <Cesium3DViewer
+                                                coordinates={twin.polygon || twin.coordinates || []}
+                                                landId={twin.landId}
+                                            />
+                                        )}
                                     </div>
                                 </div>
                             </div>
