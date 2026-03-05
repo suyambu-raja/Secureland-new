@@ -12,51 +12,59 @@ const WEATHER_API_KEY = import.meta.env.VITE_WEATHER_API_KEY || "";
 const OPENAI_API_KEY = import.meta.env.VITE_OPENAI_API_KEY || "";
 
 // ============================================
-// MOCK PROPERTY DATA
+// LOAD USER'S REGISTERED LAND FROM DIGITAL TWIN
 // ============================================
-const mockProperties: Record<string, any> = {
-    "CHN-102": {
-        id: "CHN-102",
-        name: "Velachery Green Plots",
-        location: "Velachery, Chennai",
-        latitude: 12.9784,
-        longitude: 80.2210,
-        elevation: 7,
-        area: "2400 sq.ft",
-        price: "₹1.2 Cr",
-        distance_to_river: 1200,
-        nearby_water: "Adyar River",
-        safety_score: 62,
-        flood_history: "Flooded in 2015, 2021",
-    },
-    "CBE-205": {
-        id: "CBE-205",
-        name: "Green Valley Estate",
-        location: "Coimbatore North",
-        latitude: 11.0168,
-        longitude: 76.9558,
-        elevation: 425,
-        area: "3200 sq.ft",
-        price: "₹85 L",
-        distance_to_river: 4500,
-        nearby_water: "Noyyal River",
-        safety_score: 94,
-        flood_history: "None recorded",
-    },
-    "OTY-301": {
-        id: "OTY-301",
-        name: "Hilltop Gardens",
-        location: "Coonoor, Ooty",
-        latitude: 11.3530,
-        longitude: 76.7959,
-        elevation: 1850,
-        area: "4000 sq.ft",
-        price: "₹1.5 Cr",
-        distance_to_river: 8200,
-        nearby_water: "Coonoor Stream",
-        safety_score: 97,
-        flood_history: "None recorded",
-    },
+const getRegisteredLandProperty = (): any | null => {
+    try {
+        const stored = localStorage.getItem("secureland_latest_twin");
+        if (!stored) return null;
+        const twin = JSON.parse(stored);
+        if (!twin?.coordinates?.length) return null;
+
+        // Calculate center from polygon coordinates
+        const centerLat = twin.coordinates.reduce((s: number, c: any) => s + c.lat, 0) / twin.coordinates.length;
+        const centerLng = twin.coordinates.reduce((s: number, c: any) => s + c.lng, 0) / twin.coordinates.length;
+
+        // Estimate elevation from latitude (rough approximation)
+        const estimatedElevation = Math.round(Math.abs(centerLat - 13) * 15 + 5);
+
+        return {
+            id: twin.landId,
+            name: `${twin.ownerName}'s Land`,
+            location: twin.location || "Registered Location",
+            latitude: centerLat,
+            longitude: centerLng,
+            elevation: estimatedElevation,
+            area: `${Math.round(twin.area || 0)} sq.m`,
+            price: "Registered",
+            distance_to_river: 2000, // Default estimate
+            nearby_water: "Nearest Water Body",
+            safety_score: Math.max(30, 100 - estimatedElevation),
+            flood_history: "Under monitoring",
+            polygon: twin.polygon || twin.coordinates,
+            ownerName: twin.ownerName,
+            state: twin.state,
+        };
+    } catch {
+        return null;
+    }
+};
+
+// Fallback mock property
+const fallbackProperty = {
+    id: "DEMO-001",
+    name: "Demo Property",
+    location: "Chennai, Tamil Nadu",
+    latitude: 12.9784,
+    longitude: 80.2210,
+    elevation: 7,
+    area: "2400 sq.ft",
+    price: "₹1.2 Cr",
+    distance_to_river: 1200,
+    nearby_water: "Adyar River",
+    safety_score: 62,
+    flood_history: "No data",
+    polygon: [],
 };
 
 // ============================================
@@ -117,7 +125,7 @@ const weatherScenarios = [
 // ============================================
 // GOOGLE MAP SATELLITE PREVIEW
 // ============================================
-const SatelliteMapPreview = ({ lat, lng, label }: { lat: number; lng: number; label: string }) => {
+const SatelliteMapPreview = ({ lat, lng, label, polygon }: { lat: number; lng: number; label: string; polygon?: { lat: number; lng: number }[] }) => {
     const mapRef = useRef<HTMLDivElement>(null);
     const mapInstance = useRef<any>(null);
 
@@ -132,28 +140,54 @@ const SatelliteMapPreview = ({ lat, lng, label }: { lat: number; lng: number; la
             }
             const map = new google.maps.Map(mapRef.current!, {
                 center: { lat, lng },
-                zoom: 15,
+                zoom: 16,
                 mapTypeId: "satellite",
                 disableDefaultUI: true,
                 gestureHandling: "cooperative",
             });
-            new google.maps.Marker({ position: { lat, lng }, map, title: label });
 
-            new google.maps.Circle({
-                center: { lat, lng },
-                radius: 100,
-                strokeColor: "#2563EB",
-                strokeOpacity: 0.8,
-                strokeWeight: 2,
-                fillColor: "#2563EB",
-                fillOpacity: 0.1,
-                map,
-            });
+            // If we have a polygon from the registered land, draw it
+            if (polygon && polygon.length >= 3) {
+                new google.maps.Polygon({
+                    paths: polygon.map(p => ({ lat: p.lat, lng: p.lng })),
+                    strokeColor: "#00E5FF",
+                    strokeOpacity: 1,
+                    strokeWeight: 3,
+                    fillColor: "#2563EB",
+                    fillOpacity: 0.25,
+                    map,
+                });
+
+                // Fit map to polygon bounds
+                const bounds = new google.maps.LatLngBounds();
+                polygon.forEach(p => bounds.extend({ lat: p.lat, lng: p.lng }));
+                map.fitBounds(bounds, 60);
+
+                // Mark corner points
+                polygon.forEach((p, i) => {
+                    new google.maps.Marker({
+                        position: { lat: p.lat, lng: p.lng },
+                        map,
+                        label: { text: `${i + 1}`, color: "#fff", fontWeight: "bold", fontSize: "10px" },
+                        icon: {
+                            path: google.maps.SymbolPath.CIRCLE, scale: 7,
+                            fillColor: "#00E5FF", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2,
+                        },
+                    });
+                });
+            } else {
+                // No polygon — just show marker + circle
+                new google.maps.Marker({ position: { lat, lng }, map, title: label });
+                new google.maps.Circle({
+                    center: { lat, lng }, radius: 100,
+                    strokeColor: "#2563EB", strokeOpacity: 0.8, strokeWeight: 2,
+                    fillColor: "#2563EB", fillOpacity: 0.1, map,
+                });
+            }
 
             mapInstance.current = map;
         };
 
-        // Check if Google Maps is already loaded or loading
         if ((window as any).google?.maps) {
             initMap();
         } else if (!document.getElementById("google-maps-script")) {
@@ -164,7 +198,6 @@ const SatelliteMapPreview = ({ lat, lng, label }: { lat: number; lng: number; la
             script.onload = () => setTimeout(initMap, 200);
             document.head.appendChild(script);
         } else {
-            // Script exists but maps not ready — poll
             const poll = setInterval(() => {
                 if ((window as any).google?.maps) {
                     clearInterval(poll);
@@ -172,7 +205,7 @@ const SatelliteMapPreview = ({ lat, lng, label }: { lat: number; lng: number; la
                 }
             }, 200);
         }
-    }, [lat, lng, label]);
+    }, [lat, lng, label, polygon]);
 
     return <div ref={mapRef} className="w-full h-full rounded-2xl" />;
 };
@@ -320,7 +353,9 @@ const DisasterSimulationPage = () => {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
 
-    const property = mockProperties[id || ""] || mockProperties["CHN-102"];
+    // Load user's registered land, or fall back to demo
+    const registeredLand = getRegisteredLandProperty();
+    const property = registeredLand || fallbackProperty;
 
     const [waterLevel, setWaterLevel] = useState(0);
     const [selectedScenario, setSelectedScenario] = useState(0);
@@ -550,6 +585,7 @@ ${floodRisk.score >= 50 ? "⚠️ HIGH RISK: This property has significant flood
                                 lat={property.latitude}
                                 lng={property.longitude}
                                 label={property.name}
+                                polygon={property.polygon}
                             />
                         </div>
                     </div>
@@ -819,33 +855,27 @@ ${floodRisk.score >= 50 ? "⚠️ HIGH RISK: This property has significant flood
                 </div>
             </div>
 
-            {/* Property Comparison */}
-            <div className="glass-card rounded-2xl p-5">
-                <h3 className="text-base font-bold text-foreground mb-4">Compare with Other Properties</h3>
-                <div className="grid md:grid-cols-3 gap-3">
-                    {Object.values(mockProperties).map((p: any) => {
-                        const risk = calculateFloodRisk(p.elevation, scenario.rainfall, p.distance_to_river);
-                        const c = riskColors[risk.level];
-                        return (
-                            <div
-                                key={p.id}
-                                onClick={() => navigate(`/marketplace/disaster-simulation/${p.id}`)}
-                                className={`p-4 rounded-xl border cursor-pointer transition-all hover:shadow-md ${p.id === property.id ? `${c.fill} border-2 ${c.border}` : "bg-secondary/30 border-border/50 hover:bg-secondary/50"
-                                    }`}
-                            >
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-sm font-bold text-foreground">{p.id}</span>
-                                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md ${c.fill} ${c.text}`}>{risk.level}</span>
-                                </div>
-                                <p className="text-xs text-muted-foreground mb-1">{p.location}</p>
-                                <div className="text-xs text-muted-foreground">
-                                    {p.elevation}m elev · {(p.distance_to_river / 1000).toFixed(1)}km to river
-                                </div>
+            {/* Registered Land Info */}
+            {registeredLand && (
+                <div className="glass-card rounded-2xl p-5">
+                    <h3 className="text-base font-bold text-foreground mb-4 flex items-center gap-2">
+                        <Shield className="w-5 h-5 text-cyan-400" /> Your Registered Land
+                    </h3>
+                    <div className="grid md:grid-cols-4 gap-3">
+                        {[
+                            { label: "Land ID", value: registeredLand.id },
+                            { label: "Owner", value: registeredLand.ownerName },
+                            { label: "Location", value: registeredLand.location },
+                            { label: "State", value: registeredLand.state },
+                        ].map((item) => (
+                            <div key={item.label} className="p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20">
+                                <p className="text-[10px] text-muted-foreground font-medium">{item.label}</p>
+                                <p className="text-sm font-bold text-foreground truncate">{item.value}</p>
                             </div>
-                        );
-                    })}
+                        ))}
+                    </div>
                 </div>
-            </div>
+            )}
         </motion.div>
     );
 };
